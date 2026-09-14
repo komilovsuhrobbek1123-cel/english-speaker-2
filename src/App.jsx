@@ -306,130 +306,381 @@ function Words() {
   )
 }
 
-const QUIZ_SIZE = 10
+const QUIZ_MODES = [
+  { id: 'mix', label: 'Aralash', icon: '🎲', desc: 'Barcha turdagi savollar' },
+  { id: 'en2uz', label: 'Tarjima', icon: '🌐', desc: 'Inglizcha → o\'zbekcha' },
+  { id: 'uz2en', label: 'Topish', icon: '🔍', desc: 'O\'zbekcha → inglizcha' },
+  { id: 'listen', label: 'Eshitish', icon: '🎧', desc: 'Audio asosida topish' },
+]
+const QUIZ_SIZES = [5, 10, 15, 20]
+const QUIZ_TIME = 20
+
+function beep(ok) {
+  const AC = window.AudioContext || window.webkitAudioContext
+  if (!AC) return
+  const ctx = new AC()
+  const tone = (freq, delay, dur, type = 'sine', vol = 0.12) => {
+    const o = ctx.createOscillator()
+    const g = ctx.createGain()
+    o.type = type
+    o.frequency.value = freq
+    o.connect(g)
+    g.connect(ctx.destination)
+    const t = ctx.currentTime + delay
+    g.gain.setValueAtTime(vol, t)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+    o.start(t)
+    o.stop(t + dur)
+  }
+  if (ok) {
+    tone(523.25, 0, 0.15)
+    tone(659.25, 0.12, 0.15)
+    tone(783.99, 0.24, 0.25)
+  } else {
+    tone(196, 0, 0.28, 'sawtooth', 0.1)
+  }
+}
+
+function buildQuestions(pool, size, mode) {
+  const qs = []
+  const used = new Set()
+  while (qs.length < size && used.size < pool.length) {
+    const w = pool[Math.floor(Math.random() * pool.length)]
+    if (used.has(w.en)) continue
+    used.add(w.en)
+    const m = mode === 'mix'
+      ? (qs.length % 3 === 0 ? 'listen' : qs.length % 2 === 0 ? 'uz2en' : 'en2uz')
+      : mode
+    const dist = shuffle(pool.filter((x) => x.en !== w.en)).slice(0, 3)
+    let prompt, options, correctText
+    if (m === 'listen') {
+      prompt = 'audio'
+      options = shuffle([w.en, ...dist.map((d) => d.en)])
+      correctText = w.en
+    } else if (m === 'uz2en') {
+      prompt = w.uz
+      options = shuffle([w.en, ...dist.map((d) => d.en)])
+      correctText = w.en
+    } else {
+      prompt = w.en
+      options = shuffle([w.uz, ...dist.map((d) => d.uz)])
+      correctText = w.uz
+    }
+    qs.push({ word: w, mode: m, prompt, options, correctText })
+  }
+  return qs
+}
+
+const LETTERS = ['A', 'B', 'C', 'D']
 
 function Quiz() {
+  const [phase, setPhase] = useState('start')
+  const [settings, setSettings] = useState({ dif: 'all', size: 10, mode: 'mix' })
   const [questions, setQuestions] = useState([])
   const [idx, setIdx] = useState(0)
   const [score, setScore] = useState(0)
-  const [done, setDone] = useState(false)
-  const [selected, setSelected] = useState(null)
+  const [streak, setStreak] = useState(0)
+  const [maxStreak, setMaxStreak] = useState(0)
+  const [result, setResult] = useState(null)
+  const [picked, setPicked] = useState(null)
+  const [left, setLeft] = useState(QUIZ_TIME)
+  const [elapsed, setElapsed] = useState(0)
+  const [mistakes, setMistakes] = useState([])
+  const [prevBest, setPrevBest] = useState(() => Number(localStorage.getItem('es_best') || 0))
   const [best, setBest] = useState(() => Number(localStorage.getItem('es_best') || 0))
+  const [bestStreak, setBestStreak] = useState(() => Number(localStorage.getItem('es_streak') || 0))
+
+  const pool = settings.dif === 'all' ? WORDS : WORDS.filter((w) => w.dif === settings.dif)
 
   const start = () => {
-    const qs = shuffle(WORDS)
-      .slice(0, QUIZ_SIZE)
-      .map((w) => {
-        const options = shuffle([w, ...shuffle(WORDS).filter((x) => x.uz !== w.uz).slice(0, 3)])
-        return { word: w, options: shuffle(options) }
-      })
+    const qs = buildQuestions(pool, settings.size, settings.mode)
     setQuestions(qs)
     setIdx(0)
     setScore(0)
-    setDone(false)
-    setSelected(null)
+    setStreak(0)
+    setMaxStreak(0)
+    setResult(null)
+    setElapsed(0)
+    setMistakes([])
+    setPrevBest(best)
+    setPhase('play')
+  }
+
+  const finish = () => {
+    const finalBest = Math.max(best, score)
+    const finalStreak = Math.max(bestStreak, maxStreak)
+    localStorage.setItem('es_best', String(finalBest))
+    localStorage.setItem('es_streak', String(finalStreak))
+    setBest(finalBest)
+    setBestStreak(finalStreak)
+    setPhase('end')
   }
 
   useEffect(() => {
-    start()
-  }, [])
-
-  const answer = (opt) => {
-    if (selected) return
-    setSelected(opt)
-    if (opt === questions[idx].word) {
-      const s = score + 1
-      setScore(s)
-      if (s > best) {
-        setBest(s)
-        localStorage.setItem('es_best', String(s))
-      }
+    if (phase !== 'play') return
+    setLeft(QUIZ_TIME)
+    const q = questions[idx]
+    if (!q) return
+    let t
+    if (q.mode === 'listen') {
+      t = setTimeout(() => speak(q.word.en), 500)
     }
-  }
-
-  const next = () => {
-    if (idx + 1 >= questions.length) {
-      setDone(true)
-    } else {
-      setIdx(idx + 1)
-      setSelected(null)
+    return () => {
+      if (t) clearTimeout(t)
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel()
     }
-  }
+  }, [phase, idx])
 
-  const restart = () => {
-    start()
-    const b = localStorage.getItem('es_best')
-    if (b) setBest(Number(b))
-  }
+  useEffect(() => {
+    if (phase !== 'play' || result) return
+    const iv = setInterval(() => {
+      setLeft((l) => (l > 1 ? l - 1 : 0))
+    }, 1000)
+    return () => clearInterval(iv)
+  }, [phase, idx, result])
 
-  if (done) {
+  useEffect(() => {
+    if (phase !== 'play' || result || left > 0) return
+    setResult('timeout')
+    setStreak(0)
+    setMistakes((m) => [...m, questions[idx].word])
+    beep(false)
+  }, [left, phase, result])
+
+  useEffect(() => {
+    if (phase !== 'play') return
+    const iv = setInterval(() => setElapsed((e) => e + 1), 1000)
+    return () => clearInterval(iv)
+  }, [phase])
+
+  if (phase === 'start') {
     return (
       <section className="page">
-        <div className="quiz-results">
-          <div className="result-icon">🏆</div>
-          <h2>Mashq tugadi!</h2>
-          <p className="result-score">
-            Natijangiz: <strong>{score} / {questions.length}</strong>
-          </p>
-          <p className="result-best">
-            {score >= best && score > 0 ? 'Yangi rekord! 🎉 ' : ''}Umumiy eng yaxshi natija: {best}
-          </p>
-          <div className="hero-actions">
-            <button className="btn btn-primary" onClick={restart}>Yana mashq qilish</button>
+        <div className="page-head">
+          <h2>🎯 Mashq sozlamalari</h2>
+          <p>Qiyinlik, savollar soni va turini tanlang</p>
+        </div>
+        <div className="quiz-settings">
+          <div className="setting-group">
+            <span className="setting-label">Qiyinlik darajasi</span>
+            <div className="chips">
+              {[
+                { id: 'all', label: 'Barchasi' },
+                { id: 'easy', label: 'Oson' },
+                { id: 'medium', label: 'O\'rta' },
+                { id: 'hard', label: 'Qiyin' },
+              ].map((d) => (
+                <button
+                  key={d.id}
+                  className={`chip ${settings.dif === d.id ? 'active' : ''}`}
+                  onClick={() => setSettings((s) => ({ ...s, dif: d.id }))}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
           </div>
+          <div className="setting-group">
+            <span className="setting-label">Savollar soni</span>
+            <div className="chips">
+              {QUIZ_SIZES.map((n) => (
+                <button
+                  key={n}
+                  className={`chip ${settings.size === n ? 'active' : ''}`}
+                  onClick={() => setSettings((s) => ({ ...s, size: n }))}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="setting-group">
+            <span className="setting-label">Savol turi</span>
+            <div className="mode-grid">
+              {QUIZ_MODES.map((m) => (
+                <button
+                  key={m.id}
+                  className={`mode-card ${settings.mode === m.id ? 'active' : ''}`}
+                  onClick={() => setSettings((s) => ({ ...s, mode: m.id }))}
+                >
+                  <span className="mode-icon">{m.icon}</span>
+                  <span className="mode-label">{m.label}</span>
+                  <span className="mode-desc">{m.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <button className="btn btn-primary btn-start" onClick={start}>
+            Boshlash 🚀
+          </button>
+          <p className="chip-note">So'zlar bazasi: {WORDS.length} ta · Tanlangan: {pool.length} ta</p>
         </div>
       </section>
     )
   }
 
-  if (questions.length === 0) return null
+  const q = phase === 'play' ? questions[idx] : questions[Math.min(idx, questions.length - 1)]
 
-  const q = questions[idx]
+  const answer = (opt) => {
+    if (result || !q) return
+    setPicked(opt)
+    const ok = opt === q.correctText
+    setResult(ok ? 'correct' : 'wrong')
+    if (ok) {
+      const s = score + 1
+      setScore(s)
+      const st = streak + 1
+      setStreak(st)
+      setMaxStreak((p) => Math.max(p, st))
+      if (s > best) setBest(s)
+      if (st > bestStreak) setBestStreak(st)
+      beep(true)
+    } else {
+      setStreak(0)
+      setMistakes((m) => [...m, q.word])
+      beep(false)
+    }
+  }
+
+  const next = () => {
+    if (idx + 1 >= questions.length) {
+      finish()
+    } else {
+      setIdx(idx + 1)
+      setResult(null)
+      setPicked(null)
+    }
+  }
+
+  if (phase === 'play') {
+    const progress = (idx / questions.length) * 100
+    return (
+      <section className="page">
+        <div className="quiz-top">
+          <div className="hud">
+            <span className="hud-chip">🔢 {idx + 1}/{questions.length}</span>
+            <span className="hud-chip">⭐ {score}</span>
+            <span className="hud-chip streak">🔥 {streak}</span>
+            <span className={`hud-chip timer ${left <= 5 ? 'danger' : ''}`}>⏱ {left}s</span>
+          </div>
+          <div className="progress">
+            <div className="progress-fill" style={{ width: `${progress}%` }}></div>
+          </div>
+        </div>
+
+        <div className="quiz-box">
+          <div className="quiz-question">
+            {q.mode === 'listen' ? (
+              <>
+                <button className="speak-btn big" title="Yana eshitish" onClick={() => speak(q.word.en)}>🔊</button>
+                <span className="listen-hint">Eshiting va to'g'ri so'zni tanlang</span>
+              </>
+            ) : (
+              <>
+                <span className="q-prompt">{q.prompt}</span>
+                {q.mode === 'en2uz' && (
+                  <button className="speak-btn big" title="Talaffuzni eshitish" onClick={() => speak(q.word.en)}>🔊</button>
+                )}
+              </>
+            )}
+          </div>
+          <p className="quiz-hint">
+            {q.mode === 'uz2en' ? 'Inglizcha so\'zini tanlang:' : q.mode === 'listen' ? 'Eshitgan so\'zingizni tanlang:' : 'To\'g\'ri tarjimasini tanlang:'}
+          </p>
+          <div className={`quiz-options ${result ? 'reveal' : ''}`}>
+            {q.options.map((o, i) => {
+              const isCorrect = o === q.correctText
+              const isPicked = o === picked
+              const cls = ['option']
+              if (result) {
+                if (isCorrect) cls.push('correct')
+                else if (result === 'wrong' && isPicked) cls.push('wrong')
+              }
+              return (
+                <button
+                  key={o}
+                  className={cls.join(' ')}
+                  disabled={!!result}
+                  onClick={() => answer(o)}
+                >
+                  <span className="opt-letter">{LETTERS[i]}</span>
+                  <span className="opt-text">{o}</span>
+                </button>
+              )
+            })}
+          </div>
+          {result && (
+            <div className={`quiz-feedback ${result === 'correct' ? 'good' : 'bad'}`}>
+              <span>
+                {result === 'correct'
+                  ? 'To\'g\'ri! 🎉 +1'
+                  : result === 'timeout'
+                    ? `Vaqt tugadi ⏰ To'g'ri javob: ${q.correctText}`
+                    : `Noto'g'ri. To'g'ri javob: ${q.correctText}`}
+              </span>
+              <button className="btn btn-primary small" onClick={next}>
+                {idx + 1 >= questions.length ? 'Natijani ko\'rish 📊' : 'Keyingisi →'}
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+    )
+  }
+
+  const accuracy = questions.length ? Math.round((score / questions.length) * 100) : 0
+  const mins = Math.floor(elapsed / 60)
+  const secs = elapsed % 60
+  const timeStr = `${mins}:${String(secs).padStart(2, '0')}`
+  const rating = accuracy >= 80 ? '🏆' : accuracy >= 50 ? '👍' : '💪'
+  const isRecord = score > 0 && Math.max(best, score) > prevBest
 
   return (
     <section className="page">
-      <div className="page-head">
-        <h2>Mashq</h2>
-        <p className="quiz-progress">
-          {idx + 1} / {questions.length} &nbsp;•&nbsp; Ball: {score}
+      <div className="quiz-results">
+        <div className="result-icon">{rating}</div>
+        <h2>
+          {accuracy >= 80 ? 'Ajoyib! A\'lo natija' : accuracy >= 50 ? 'Yaxshi natija!' : 'Mashq qilishda davom eting'}
+        </h2>
+        {isRecord && <div className="record-badge">🏆 Yangi rekord!</div>}
+        <div className="stat-row">
+          <div className="stat">
+            <div className="stat-num">{score}/{questions.length}</div>
+            <div className="stat-label">To'g'ri</div>
+          </div>
+          <div className="stat">
+            <div className="stat-num">{accuracy}%</div>
+            <div className="stat-label">Aniqlik</div>
+          </div>
+          <div className="stat">
+            <div className="stat-num">🔥{maxStreak}</div>
+            <div className="stat-label">Seriya</div>
+          </div>
+          <div className="stat">
+            <div className="stat-num">{timeStr}</div>
+            <div className="stat-label">Vaqt</div>
+          </div>
+        </div>
+        <p className="result-best">
+          Eng yaxshi natija: {Math.max(best, score)} · Eng uzun seriya: {Math.max(bestStreak, maxStreak)}
         </p>
-      </div>
-      <div className="quiz-box">
-        <div className="quiz-question">
-          <button className="speak-btn big" title="Eshitish" onClick={() => speak(q.word.en)}>🔊</button>
-          <span>{q.word.en}</span>
-        </div>
-        <p className="quiz-hint">To'g'ri tarjimasini tanlang:</p>
-        <div className="quiz-options">
-          {q.options.map((o) => {
-            const isCorrect = o === q.word
-            const isSelected = selected === o
-            let cls = 'option'
-            if (selected) {
-              cls += isCorrect ? ' correct' : isSelected ? ' wrong' : ''
-            }
-            return (
-              <button
-                key={o.uz}
-                className={cls}
-                disabled={!!selected}
-                onClick={() => answer(o)}
-              >
-                {o.uz}
-              </button>
-            )
-          })}
-        </div>
-        {selected && (
-          <div className={`quiz-feedback ${selected === q.word ? 'good' : 'bad'}`}>
-            {selected === q.word
-              ? 'To\'g\'ri! 🎉'
-              : `Noto'g'ri. To'g'ri javob: ${q.word.uz}`}
-            <button className="btn btn-primary small" onClick={next}>
-              {idx + 1 >= questions.length ? 'Natijani ko\'rish' : 'Keyingisi →'}
-            </button>
+        {mistakes.length > 0 && (
+          <div className="mistakes">
+            <h3>Xatolar ({mistakes.length})</h3>
+            <ul>
+              {mistakes.map((w) => (
+                <li key={w.en + idx}>
+                  <span className="mis-word" onClick={() => speak(w.en)}>{w.en} 🔊</span>
+                  <span className="mis-uz">— {w.uz}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
+        <div className="hero-actions">
+          <button className="btn btn-ghost" onClick={() => setPhase('start')}>⚙️ Sozlamalar</button>
+          <button className="btn btn-primary" onClick={start}>Yana mashq qilish</button>
+        </div>
       </div>
     </section>
   )
