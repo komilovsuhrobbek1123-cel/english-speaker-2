@@ -180,6 +180,37 @@ function shuffle(arr) {
   return a
 }
 
+function say(text, lang) {
+  if (!text || !('speechSynthesis' in window)) return
+  window.speechSynthesis.cancel()
+  const u = new SpeechSynthesisUtterance(text)
+  u.lang = lang
+  u.rate = 0.95
+  window.speechSynthesis.speak(u)
+}
+
+async function googleTranslate(text, from, to) {
+  const url =
+    'https://translate.googleapis.com/translate_a/single?client=gtx&dt=t' +
+    `&sl=${from}&tl=${to}&q=${encodeURIComponent(text)}`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error('Google tarjima xatosi')
+  const data = await res.json()
+  const out = data[0].map((seg) => seg[0]).join('')
+  return out || text
+}
+
+async function myMemoryTranslate(text, from, to) {
+  const sl = from === 'auto' ? 'en' : from
+  const url =
+    `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}` +
+    `&langpair=${sl}|${to}`
+  const res = await fetch(url)
+  const data = await res.json()
+  if (data.responseStatus !== 200) throw new Error(data.responseDetails || 'MyMemory xatosi')
+  return data.responseData.translatedText || text
+}
+
 function Header() {
   return (
     <header className="header">
@@ -192,6 +223,7 @@ function Header() {
           <NavLink to="/" end>Bosh sahifa</NavLink>
           <NavLink to="/sozlar">So'zlar</NavLink>
           <NavLink to="/mashq">Mashq</NavLink>
+          <NavLink to="/tarjimon">Tarjimon</NavLink>
         </div>
       </nav>
     </header>
@@ -232,6 +264,11 @@ function Home() {
           <div className="feature-icon">🎯</div>
           <h3>Interaktiv mashq</h3>
           <p>Test yeching, ball to'plang va natijani ko'ring.</p>
+        </div>
+        <div className="feature-card" onClick={() => navigate('/tarjimon')} style={{ cursor: 'pointer' }}>
+          <div className="feature-icon">🌐</div>
+          <h3>Tarjimon</h3>
+          <p>Ingliz-ozbek, o'zbek-ingliz matnni onlayn tarjima qiling.</p>
         </div>
       </div>
       <p className="hero-count">{WORDS.length} ta mashhur inglizcha so'z kiritilgan</p>
@@ -686,6 +723,173 @@ function Quiz() {
   )
 }
 
+function Tarjimon() {
+  const [from, setFrom] = useState('auto')
+  const [to, setTo] = useState('uz')
+  const [input, setInput] = useState('')
+  const [output, setOutput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [retryTick, setRetryTick] = useState(0)
+
+  useEffect(() => {
+    const text = input.trim()
+    if (!text || (from !== 'auto' && from === to)) {
+      setOutput('')
+      setLoading(false)
+      setError(null)
+      return
+    }
+    setError(null)
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      setLoading(true)
+      try {
+        let result
+        try {
+          result = await googleTranslate(text, from, to)
+        } catch {
+          if (!cancelled) {
+            result = await myMemoryTranslate(text, from, to)
+          } else {
+            return
+          }
+        }
+        if (!cancelled) setOutput(result)
+      } catch {
+        if (!cancelled) {
+          setOutput('')
+          setError('Tarjima amalga oshmadi. Internet aloqani tekshirib, qayta urinib ko\u2019ring.')
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }, 600)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [input, from, to, retryTick])
+
+  const sameLang = from !== 'auto' && from === to
+
+  function swap() {
+    const newFrom = to
+    const newTo = from === 'auto' ? 'en' : from
+    setFrom(newFrom)
+    setTo(newTo)
+    setInput(output)
+    setOutput('')
+    setError(null)
+  }
+
+  function clearAll() {
+    setInput('')
+    setOutput('')
+    setError(null)
+  }
+
+  async function copy(text) {
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      ta.remove()
+    }
+  }
+
+  const LANG_SRC = [
+    { v: 'auto', label: 'Avtomatik aniqlash' },
+    { v: 'en', label: 'Inglizcha' },
+    { v: 'uz', label: 'O\u2019zbekcha' },
+  ]
+  const LANG_DST = [
+    { v: 'uz', label: 'O\u2019zbekcha' },
+    { v: 'en', label: 'Inglizcha' },
+  ]
+
+  return (
+    <section className="page">
+      <div className="page-head">
+        <h2>🌐 Tarjimon</h2>
+        <p>Matn kiriting — Inglizcha ↔ O\u2019zbekcha onlayn tarjima.</p>
+      </div>
+
+      <div className="trans-card">
+        <div className="trans-controls">
+          <div className="trans-select-wrap">
+            <span className="trans-select-label">Manba til</span>
+            <select value={from} onChange={(e) => setFrom(e.target.value)}>
+              {LANG_SRC.map((l) => (
+                <option key={l.v} value={l.v}>{l.label}</option>
+              ))}
+            </select>
+          </div>
+          <button className="swap-btn" title="Tillar o\u2019rnini almashtirish" onClick={swap}>⇄</button>
+          <div className="trans-select-wrap">
+            <span className="trans-select-label">Tarjima tili</span>
+            <select value={to} onChange={(e) => setTo(e.target.value)}>
+              {LANG_DST.map((l) => (
+                <option key={l.v} value={l.v}>{l.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="trans-panes">
+          <div className="trans-pane">
+            <textarea
+              className="trans-input"
+              value={input}
+              onChange={(e) => setInput(e.target.value.slice(0, 5000))}
+              placeholder="Tarjima qilish uchun matn kiriting..."
+              rows={7}
+            />
+            <div className="pane-bar">
+              <span className="pane-chars">{input.length}/5000</span>
+              <div className="pane-actions">
+                <button className="icon-btn" title="O\u2019qish" onClick={() => say(input, from === 'uz' ? 'uz-UZ' : 'en-US')}>🔊</button>
+                <button className="icon-btn" title="Nusxalash" onClick={() => copy(input)}>📋</button>
+                <button className="icon-btn" title="Tozalash" onClick={clearAll}>🗑️</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="trans-pane trans-pane-out">
+            {sameLang ? (
+              <div className="trans-hint">⚠️ Manba va tarjima tili bir xil. Boshqa tilni tanlang.</div>
+            ) : loading && !output ? (
+              <div className="trans-loading"><span className="spinner" /> Tarjima qilinmoqda...</div>
+            ) : (
+              <div className="trans-output">{output || (input ? '' : 'Tarjima shu yerda ko\u2019rinadi')}</div>
+            )}
+            {output && (
+              <div className="pane-bar">
+                <div className="pane-actions">
+                  <button className="icon-btn" title="O\u2019qish" onClick={() => say(output, to === 'uz' ? 'uz-UZ' : 'en-US')}>🔊</button>
+                  <button className="icon-btn" title="Nusxalash" onClick={() => copy(output)}>📋</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {error && (
+          <div className="trans-error">
+            <span>⚠️ {error}</span>
+            <button className="btn btn-ghost" onClick={() => setRetryTick((t) => t + 1)}>Qayta urinish</button>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function App() {
   return (
     <HashRouter>
@@ -696,6 +900,7 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/sozlar" element={<Words />} />
             <Route path="/mashq" element={<Quiz />} />
+            <Route path="/tarjimon" element={<Tarjimon />} />
             <Route path="*" element={<Home />} />
           </Routes>
         </main>
