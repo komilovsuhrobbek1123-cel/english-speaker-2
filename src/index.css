@@ -273,6 +273,87 @@ html, body {
 .speak-btn:hover { transform: scale(1.1); background: var(--border); }
 .speak-btn.big { width: 52px; height: 52px; font-size: 24px; }
 
+.card-actions { display: flex; align-items: center; gap: 10px; }
+
+.card-actions .speak-btn { width: 32px; height: 32px; font-size: 14px; }
+
+.card-hint { font-size: 11px; color: var(--muted); }
+
+.card-front .card-uz { font-size: 16px; color: var(--accent-2); font-weight: 600; }
+
+.words-toolbar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.view-toggle { display: flex; gap: 8px; }
+
+.words-search {
+  flex: 1;
+  min-width: 200px;
+  max-width: 340px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  outline: none;
+}
+
+.words-search:focus { border-color: var(--accent); }
+
+.words-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+}
+
+.words-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+  min-width: 480px;
+}
+
+.words-table th {
+  text-align: left;
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.words-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.words-table tr:last-child td { border-bottom: none; }
+.words-table tbody tr:hover { background: rgba(139, 92, 246, 0.06); }
+
+.wt-en { font-weight: 700; }
+.wt-tr { color: var(--muted); }
+.wt-uz { color: var(--accent-2); }
+
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.badge-easy { background: rgba(52, 211, 153, 0.15); color: var(--green); }
+.badge-medium { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+.badge-hard { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+
+.words-empty { text-align: center; color: var(--muted); padding: 30px; margin: 0; }
+
 .quiz-box {
   max-width: 640px;
   margin: 0 auto;
@@ -735,11 +816,13 @@ html, body {
 @media (max-width: 640px) {
   .hero { padding: 48px 20px; }
   .nav { padding: 12px 16px; }
-  .card { height: 150px; }
+  .card { height: 160px; }
   .quiz-box { padding: 22px 16px; }
   .trans-panes { grid-template-columns: 1fr; }
   .trans-card { padding: 18px 14px; }
   .trans-controls { flex-direction: column; align-items: stretch; }
   .swap-btn { align-self: center; transform: rotate(90deg); }
   .swap-btn:hover { transform: rotate(90deg); }
+  .words-search { max-width: none; width: 100%; }
+  .words-toolbar { flex-direction: column; align-items: stretch; }
 }

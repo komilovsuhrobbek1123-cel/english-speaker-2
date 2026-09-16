@@ -287,15 +287,20 @@ function Flashcard({ word, onFlip }) {
         <div className="card-face card-front">
           <span className="card-en">{word.en}</span>
           <span className="card-tr">{word.tr}</span>
-          <button
-            className="speak-btn"
-            title="Talaffuzni eshitish"
-            onClick={(e) => { e.stopPropagation(); speak(word.en) }}
-          >
-            🔊
-          </button>
+          <span className="card-uz">{word.uz}</span>
+          <div className="card-actions">
+            <button
+              className="speak-btn"
+              title="Talaffuzni eshitish"
+              onClick={(e) => { e.stopPropagation(); speak(word.en) }}
+            >
+              🔊
+            </button>
+            <span className="card-hint">⤵ tarjimasi</span>
+          </div>
         </div>
         <div className="card-face card-back">
+          <span className="card-en">{word.en}</span>
           <span className="card-uz">{word.uz}</span>
           <button
             className="speak-btn"
@@ -312,16 +317,22 @@ function Flashcard({ word, onFlip }) {
 
 function Words() {
   const [cat, setCat] = useState('Barchasi')
+  const [view, setView] = useState('card')
+  const [query, setQuery] = useState('')
   const DIFF = { Oson: 'easy', 'O\'rta': 'medium', Qiyin: 'hard' }
-  const list = cat === 'Barchasi'
-    ? WORDS
-    : WORDS.filter((w) => w.dif === DIFF[cat])
+  const DIFF_LABEL = { easy: 'Oson', medium: 'O\'rta', hard: 'Qiyin' }
+  const list = (cat === 'Barchasi' ? WORDS : WORDS.filter((w) => w.dif === DIFF[cat]))
+    .filter((w) => {
+      const q = query.trim().toLowerCase()
+      if (!q) return true
+      return w.en.toLowerCase().includes(q) || w.uz.toLowerCase().includes(q)
+    })
 
   return (
     <section className="page">
       <div className="page-head">
-        <h2>So'z kartochkalari</h2>
-        <p>Kartochkani bosib tarjimasini ko'ring, 🔊 tugmasi bilan talaffuzini eshiting.</p>
+        <h2>So'zlar</h2>
+        <p>Tarjimasi bilan ko'ring, 🔊 tugmasi bilan talaffuzini eshiting.</p>
       </div>
       <div className="tabs">
         {CATEGORIES.map((c) => (
@@ -334,11 +345,58 @@ function Words() {
           </button>
         ))}
       </div>
-      <div className="cards-grid">
-        {list.map((w) => (
-          <Flashcard key={w.en + w.uz} word={w} />
-        ))}
+      <div className="words-toolbar">
+        <div className="view-toggle">
+          <button className={`chip ${view === 'card' ? 'active' : ''}`} onClick={() => setView('card')}>🃏 Kartochkalar</button>
+          <button className={`chip ${view === 'list' ? 'active' : ''}`} onClick={() => setView('list')}>📋 Ro'yxat</button>
+        </div>
+        <input
+          className="words-search"
+          type="search"
+          placeholder="Qidirish: inglizcha yoki o'zbekcha..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
+
+      {view === 'card' ? (
+        <div className="cards-grid">
+          {list.map((w) => (
+            <Flashcard key={w.en + w.uz} word={w} />
+          ))}
+        </div>
+      ) : (
+        <div className="words-table-wrap">
+          <table className="words-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Inglizcha</th>
+                <th>Talaffuz</th>
+                <th>O'zbekcha</th>
+                <th>Daraja</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((w, i) => (
+                <tr key={w.en + w.uz}>
+                  <td>{i + 1}</td>
+                  <td className="wt-en">{w.en}</td>
+                  <td className="wt-tr">{w.tr}</td>
+                  <td className="wt-uz">{w.uz}</td>
+                  <td><span className={`badge badge-${w.dif}`}>{DIFF_LABEL[w.dif]}</span></td>
+                  <td>
+                    <button className="icon-btn" title="Talaffuzni eshitish" onClick={() => speak(w.en)}>🔊</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {list.length === 0 && <p className="words-empty">Hech narsa topilmadi 🤷</p>}
+        </div>
+      )}
+      <p className="hero-count">Ko'rsatilmoqda: {list.length} ta so'z</p>
     </section>
   )
 }
